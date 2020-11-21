@@ -1,0 +1,122 @@
+---
+title: "Chilko data summary"
+author: "K. Davidson"
+date: "November 20, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# set up
+setwd("~/Documents/ANALYSIS/data")
+library(tidyverse)
+library(xlsx)
+library(openxlsx)
+
+# data sources/overview 
+smolt.bio.yrs <- getSheetNames("Daily Length (1986-2015).xlsx")
+smolt.abund.raw <- read.xlsx("Chilko summary all years.xlsx", sheet="Annual outmigration")
+esc.raw <- read.xlsx("DFO Sockeye Escapement All Years (June 2020).xlsx", sheet="SKAll")
+fecund.raw <- read.xlsx("Sockeye Fecundity Database(2019VerifiedBB).xlsx", sheet="Data")
+psc.raw <- read.csv("PSC_master.csv")
+```
+
+```{r, include=F}
+smolt_bio_yrs <- data.frame(years=as.numeric(smolt.bio.yrs), val="smolt biodata")
+
+smolt_abund_yrs <- data.frame(years=as.numeric(smolt.abund.raw$Smolt.migration.year[1:68]), val="smolt abundance")
+
+esc_yrs <- esc.raw %>% 
+  filter(CU.Name %in% c("Chilko - Summer", "Chilko - Early Summer"), !is.na(Total), !is.na(eff_fem)) %>%
+  summarize(years=unique(Year), val="adult & ef esc") %>% 
+  print()
+
+fecund <- fecund.raw %>%
+  filter(`Stock.Name(stream)`=="Chilko River", !is.na(Final.Fecundity)) %>%
+  summarize(years=unique(Year), val="fecundity") %>% 
+  print()
+
+fecund_lengths <- fecund.raw %>% 
+  filter(`Stock.Name(stream)`=="Chilko River", !is.na(Final.Fecundity), !is.na(Std.Length), Std.Length!=0.0) %>% 
+  summarize(years=unique(Year), val="fecundity & length paired") %>%
+  print()
+
+age <- psc.raw %>% 
+  filter(Stream_Shore%in%c("Chilko River", "Chilko Lake - South End", "Chilko Lake - North End"), TotalAge>=3, TotalAge<=5, Sex=="Female") %>% 
+  summarize(years=unique(CollYear), val="age") %>% 
+  print()
+
+age_length <- psc.raw %>%
+  filter(Stream_Shore%in%c("Chilko River", "Chilko Lake - South End", "Chilko Lake - North End"), TotalAge>=3, TotalAge<=5, POH!="0", POH!="#N/A",
+    POH!="", STD!="0", STD!="#N/A", STD!="", Sex=="Female") %>% 
+  summarize(years=unique(CollYear), val="age & length paired") %>%
+  print()
+
+alldat <- rbind(smolt_bio_yrs, smolt_abund_yrs, esc_yrs, fecund, fecund_lengths, age, age_length)
+```
+
+<br>
+
+<br>
+
+# Data summary #
+
+DFO StAD has collected a variety of adult and juvenile data over the course of time (Figure 1), including:   
+
+* Smolt abundance
+* Smolt length
+* Smolt age at migration
+* Adult Growth rate (otoliths)
+* Adult length
+* Total adult abundance
+* Effective female spawner abundance
+* Female spawner length
+* Fecundity
+* Adult age (total and freshwater)
+* Water level
+
+<br>   
+
+Other types of data that may be held elsewhere: 
+
+* Smolt freshwater growth rate (otoliths, scales or repeated measures?)
+* Smolt weight
+* Smolt fat score
+* Smolt growth rate (otoliths, scales or repeated measures) 
+    - Smolt fork length in Lower Fraser/SoG
+* Adult growth rate (otoliths, scales or repeated measures) - note PSC does not record to this level for adults
+* Smolt survival during migration
+    - Smolt abundance in Lower Fraser/SoG
+* Adult fat score
+* Fry abundance
+* Fry food availability/lake productivity
+* Predator abundance (proxy or estimate of mortality rate)
+* Smolt misc physiology - swim performance, hormones, respirometry, etc.
+* Adult misc physiology - swim performance, hormones, respirometry, etc.
+
+Other data sources might be accessed through Environmental Watch Program, Hinch Lab, Mission Downstream (Tadey) or Strait of Georgia (Neville) programs.
+
+<br>
+
+```{r data, echo=F, warning=F}
+ggplot(alldat, aes(x=val, y=years, group=years)) +
+  geom_point(size=2.5, shape=21, fill="gray60", colour="black", stroke=1) +
+  scale_y_continuous(breaks=seq(1938,2020,by=3)) +
+  labs(y="", x="")+
+  coord_flip() +
+  theme_bw() +
+  theme(text = element_text(size=12),
+    axis.text.x = element_text(angle=45, hjust=1))
+```
+
+Figure 1. DFO Stock assessment time series for Chilko data types.
+
+
+
+
+
+
+
+
+
