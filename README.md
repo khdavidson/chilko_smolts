@@ -1,2 +1,2 @@
 # chilko_smolts
-Growth and survival of smolts in Chilko Lake 
+Growth and survival - Chilko smolts
