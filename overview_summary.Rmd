@@ -1,5 +1,5 @@
 ---
-title: "Chilko data summary"
+title: "Chilko growth exploration"
 author: "K. Davidson"
 date: "November 20, 2020"
 output: html_document
@@ -23,84 +23,65 @@ psc.raw <- read.csv("PSC_master.csv")
 ```
 
 ```{r, include=F}
-smolt_bio_yrs <- data.frame(years=as.numeric(smolt.bio.yrs), val="smolt biodata")
+smolt_bio_yrs <- data.frame(year=as.numeric(smolt.bio.yrs), val="smolt biodata")
 
-smolt_abund_yrs <- data.frame(years=as.numeric(smolt.abund.raw$Smolt.migration.year[1:68]), val="smolt abundance")
+smolt_abund_yrs <- data.frame(year=as.numeric(smolt.abund.raw$Smolt.migration.year[1:68]), val="smolt abundance")
+
+fry_bio_yrs <- data.frame(year=c(1985:1990,1992:2004), val="fry length & weight")  #data drive access different folders
 
 esc_yrs <- esc.raw %>% 
   filter(CU.Name %in% c("Chilko - Summer", "Chilko - Early Summer"), !is.na(Total), !is.na(eff_fem)) %>%
-  summarize(years=unique(Year), val="adult & ef esc") %>% 
+  summarize(year=unique(Year), val="adult & ef esc") %>% 
   print()
 
 fecund <- fecund.raw %>%
   filter(`Stock.Name(stream)`=="Chilko River", !is.na(Final.Fecundity)) %>%
-  summarize(years=unique(Year), val="fecundity") %>% 
+  summarize(year=unique(Year), val="fecundity") %>% 
   print()
 
 fecund_lengths <- fecund.raw %>% 
   filter(`Stock.Name(stream)`=="Chilko River", !is.na(Final.Fecundity), !is.na(Std.Length), Std.Length!=0.0) %>% 
-  summarize(years=unique(Year), val="fecundity & length paired") %>%
+  summarize(year=unique(Year), val="fecundity & length paired") %>%
   print()
 
 age <- psc.raw %>% 
   filter(Stream_Shore%in%c("Chilko River", "Chilko Lake - South End", "Chilko Lake - North End"), TotalAge>=3, TotalAge<=5, Sex=="Female") %>% 
-  summarize(years=unique(CollYear), val="age") %>% 
+  summarize(year=unique(CollYear), val="age") %>% 
   print()
 
 age_length <- psc.raw %>%
   filter(Stream_Shore%in%c("Chilko River", "Chilko Lake - South End", "Chilko Lake - North End"), TotalAge>=3, TotalAge<=5, POH!="0", POH!="#N/A",
     POH!="", STD!="0", STD!="#N/A", STD!="", Sex=="Female") %>% 
-  summarize(years=unique(CollYear), val="age & length paired") %>%
+  summarize(year=unique(CollYear), val="age & length paired") %>%
   print()
 
-alldat <- rbind(smolt_bio_yrs, smolt_abund_yrs, esc_yrs, fecund, fecund_lengths, age, age_length)
+alldat <- rbind(smolt_bio_yrs, smolt_abund_yrs, fry_bio_yrs, esc_yrs, fecund, fecund_lengths, age, age_length)
 ```
 
 <br>
 
 <br>
 
-# Data summary #
+## Chilko data summary ##
 
-DFO StAD has collected a variety of adult and juvenile data over the course of time (Figure 1), including:   
+DFO StAD data on Chilko juvenile and adult sockeye (Figure 1):
 
-* Smolt abundance
-* Smolt length
+* Smolt abundance at migration
+* Smolt length at migration
 * Smolt age at migration
-* Adult Growth rate (otoliths)
-* Adult length
-* Total adult abundance
+* Smolt migration timing (daily totals) - this may exist at finer resolution too
+* Fry abundance, age, and size (sparse data)
+* Total adult spawner abundance
 * Effective female spawner abundance
-* Female spawner length
+* Male and female spawner length
 * Fecundity
 * Adult age (total and freshwater)
 * Water level
 
-<br>   
-
-Other types of data that may be held elsewhere: 
-
-* Smolt freshwater growth rate (otoliths, scales or repeated measures?)
-* Smolt weight
-* Smolt fat score
-* Smolt growth rate (otoliths, scales or repeated measures) 
-    - Smolt fork length in Lower Fraser/SoG
-* Adult growth rate (otoliths, scales or repeated measures) - note PSC does not record to this level for adults
-* Smolt survival during migration
-    - Smolt abundance in Lower Fraser/SoG
-* Adult fat score
-* Fry abundance
-* Fry food availability/lake productivity
-* Predator abundance (proxy or estimate of mortality rate)
-* Smolt misc physiology - swim performance, hormones, respirometry, etc.
-* Adult misc physiology - swim performance, hormones, respirometry, etc.
-
-Other data sources might be accessed through Environmental Watch Program, Hinch Lab, Mission Downstream (Tadey) or Strait of Georgia (Neville) programs.
-
-<br>
+Smolt length and age and fry length and age are currently stored in data formats that would require considerable work to bring into a useable format, especially for historical data. 
 
 ```{r data, echo=F, warning=F}
-ggplot(alldat, aes(x=val, y=years, group=years)) +
+ggplot(alldat, aes(x=val, y=year, group=year)) +
   geom_point(size=2.5, shape=21, fill="gray60", colour="black", stroke=1) +
   scale_y_continuous(breaks=seq(1938,2020,by=3)) +
   labs(y="", x="")+
@@ -110,7 +91,34 @@ ggplot(alldat, aes(x=val, y=years, group=years)) +
     axis.text.x = element_text(angle=45, hjust=1))
 ```
 
-Figure 1. DFO Stock assessment time series for Chilko data types.
+Figure 1. DFO Stock assessment time series for Chilko data types. No sex information was collected in conjunction with 'age' data in 1952 hence the gap.
+
+<br> 
+
+Other types of data that may be held elsewhere: 
+
+* Smolt freshwater growth rate (otoliths, scales or captures?)
+* Smolt weight
+* Smolt fat score
+* Smolt growth rate (otoliths, scales or repeated measures) 
+    - Smolt fork length in Lower Fraser/SoG
+* Smolt survival during migration
+    - Smolt abundance in Lower Fraser/SoG
+* Smolt misc physiology - swim performance, hormones, respirometry, etc.
+* Total growth rate over life (otoliths, scales) - PSC does not record to this level for adults but possible it could be obtained
+* Adult fat score
+* Adult misc physiology - swim performance, hormones, respirometry, etc.
+* Fry abundance
+* Lake productivity/food availability (especially during fertilization experimental years) - likely patchy at best
+* Predator abundance (proxy or estimate of mortality rate)
+
+Other data sources might be accessed through Environmental Watch Program, Hinch Lab, Mission Downstream (Tadey) or Strait of Georgia (Neville) programs. 
+
+<br>
+
+## Other systems ##
+
+If other populations are required for comparison/control, the following data exists
 
 
 
