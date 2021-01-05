@@ -1,6 +1,5 @@
 ---
 title: "Chilko growth exploration"
-author: "K. Davidson"
 date: "November 20, 2020"
 output: html_document
 ---
@@ -20,14 +19,20 @@ smolt.abund.raw <- read.xlsx("Chilko summary all years.xlsx", sheet="Annual outm
 esc.raw <- read.xlsx("DFO Sockeye Escapement All Years (June 2020).xlsx", sheet="SKAll")
 fecund.raw <- read.xlsx("Sockeye Fecundity Database(2019VerifiedBB).xlsx", sheet="Data")
 psc.raw <- read.csv("PSC_master.csv")
+fry.raw <- read.xlsx("FryDB(Verified2019BB).xlsx", sheet="FryData")
+length.data <- read.csv("chilko_lengths_weightunweight_export.csv")
 ```
 
 ```{r, include=F}
+# Chilko data summaries
 smolt_bio_yrs <- data.frame(year=as.numeric(smolt.bio.yrs), val="smolt biodata")
 
 smolt_abund_yrs <- data.frame(year=as.numeric(smolt.abund.raw$Smolt.migration.year[1:68]), val="smolt abundance")
 
-fry_bio_yrs <- data.frame(year=c(1985:1990,1992:2004), val="fry length & weight")  #data drive access different folders
+fry_bio_yrs <- fry.raw %>% 
+  filter(Stream=="Chilko") %>%
+  summarize(year=unique(YEAR), val="fry length & weight") %>% 
+  print()
 
 esc_yrs <- esc.raw %>% 
   filter(CU.Name %in% c("Chilko - Summer", "Chilko - Early Summer"), !is.na(Total), !is.na(eff_fem)) %>%
@@ -62,7 +67,7 @@ alldat <- rbind(smolt_bio_yrs, smolt_abund_yrs, fry_bio_yrs, esc_yrs, fecund, fe
 
 <br>
 
-## Chilko data summary ##
+# Chilko data summary #
 
 DFO StAD data on Chilko juvenile and adult sockeye (Figure 1):
 
@@ -76,31 +81,33 @@ DFO StAD data on Chilko juvenile and adult sockeye (Figure 1):
 * Male and female spawner length
 * Fecundity
 * Adult age (total and freshwater)
-* Water level
+* Water level (continuous) and temperature (during programs)
 
 Smolt length and age and fry length and age are currently stored in data formats that would require considerable work to bring into a useable format, especially for historical data. 
 
-```{r data, echo=F, warning=F}
+```{r, echo=F, warning=F}
 ggplot(alldat, aes(x=val, y=year, group=year)) +
-  geom_point(size=2.5, shape=21, fill="gray60", colour="black", stroke=1) +
-  scale_y_continuous(breaks=seq(1938,2020,by=3)) +
+  annotate("rect", ymin=1990, ymax=1993, xmin=-Inf, xmax=Inf, fill="red", alpha=0.5) + 
+  geom_hline(yintercept=1988, linetype="solid", colour="red", size=1, alpha=0.5) +
+  geom_point(size=2.7, shape=21, fill="gray60", colour="black", stroke=1.1) +
+  scale_y_continuous(breaks=seq(1938,2020,by=5)) +
   labs(y="", x="")+
   coord_flip() +
   theme_bw() +
-  theme(text = element_text(size=12),
+  theme(text = element_text(size=12, colour="black"),
     axis.text.x = element_text(angle=45, hjust=1))
 ```
 
-Figure 1. DFO Stock assessment time series for Chilko data types. No sex information was collected in conjunction with 'age' data in 1952 hence the gap.
+Figure 1. DFO Stock assessment time series for Chilko data types. No sex information was collected in conjunction with 'age' data in 1952 hence the gap. Lake fertilization years are coloured red (1988, 1990-1993). 
 
 <br> 
 
 Other types of data that may be held elsewhere: 
 
-* Smolt freshwater growth rate (otoliths, scales or captures?)
+* Smolt freshwater growth rate (otoliths, scales or recaptures?)
 * Smolt weight
 * Smolt fat score
-* Smolt growth rate (otoliths, scales or repeated measures) 
+* Smolt growth rate (otoliths, scales or recaptures?) 
     - Smolt fork length in Lower Fraser/SoG
 * Smolt survival during migration
     - Smolt abundance in Lower Fraser/SoG
@@ -118,10 +125,59 @@ Other data sources might be accessed through Environmental Watch Program, Hinch 
 
 ## Other systems ##
 
-If other populations are required for comparison/control, the following data exists
+Sparse fry data (Figure 2) and smolt data (below) exists for other systems if controls/comparisons are required:
 
+* Cultus 1984, 1990-1991, 2000-2020
+* Nautley 1999-2000, 2019
+* South Thompson 2012-2013, 2016
+* Historic (~1940-1950) Adams Lake, Bowron, Francois Lake, Horsefly, Lillooet Lake, Little River, Lower Shuswap, Portage Creek, Quesnel Lake, Seton Creek, South Thompson, Stuart Lake, Thompson
 
+```{r, include=F}
+fry_pops <- fry.raw %>% 
+  group_by(Stream, YEAR) %>%
+  summarize(n=n()) %>% 
+  print()
+```
 
+```{r, echo=F, warning=F}
+ggplot(fry_pops %>% filter(Stream!="Chilko"), aes(x=Stream, y=YEAR)) +
+  geom_point(size=2.7, shape=21, fill="gray60", colour="black", stroke=1.1) +
+  scale_y_continuous(breaks=seq(1938,2020,by=1)) +
+  labs(y="", x="")+
+  coord_flip() +
+  theme_bw() +
+  theme(text = element_text(size=12, colour="black"),
+    axis.text.x = element_text(angle=45, hjust=1))
+```
+
+Figure 2. StA fry data excluding Chilko. 
+
+<br>
+
+# Data Exploration #
+
+## Fork length over time ## 
+
+There is some evidence of cyclic patterns in fork length overtime for both age-1 and age-2 smolts, but this pattern may be increasing in variability/breaking down in recent years (Figure 3).
+
+```{r, echo=F, warning=F}
+ggplot() +
+  annotate("rect", xmin=1990, xmax=1993, ymin=-Inf, ymax=Inf, fill="red", alpha=0.5) + 
+  geom_vline(xintercept=1988, linetype="solid", colour="red", size=1, alpha=0.5) +
+  geom_errorbar(data=length.data, aes(x=year, ymin=length_unweightavg_age2-length_unweightse_age2, ymax=length_unweightavg_age2+length_unweightse_age2), width=0, size=1, colour="gray60") +
+  geom_point(data=length.data, aes(x=year, y=length_unweightavg_age2), shape=21, colour="gray60", fill="gray80", size=4, stroke=1.5) +
+  geom_point(data=length.data, aes(x=year, y=length_weightavg_age2), shape=21, colour="black", fill="gray40", size=4, stroke=1.5, alpha=0.7) +
+  geom_errorbar(data=length.data, aes(x=year, ymin=length_unweightavg_age1-length_unweightse_age1, ymax=length_unweightavg_age1+length_unweightse_age1), width=0, size=1, colour="gray60") +
+  geom_point(data=length.data, aes(x=year, y=length_unweightavg_age1), shape=23, colour="gray60", fill="gray80", size=4, stroke=1.5) +
+  geom_point(data=length.data, aes(x=year, y=length_weightavg_age1), shape=23, colour="black", fill="gray40", size=4, stroke=1.5, alpha=0.7) +
+  scale_x_continuous(breaks=seq(1986,2020, by=3)) +
+  labs(x="", y="Fork length (mm)") +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=12),
+    axis.title = element_text(colour="black", size=15, face="bold"))
+```
+
+Figure 3. Chilko smolt age-1 (diamonds) and age-2 (circles) unweighted (light gray) and weighted-by-abundace (dark gray) fork lenghts over time. Red shaded areas indicate years of lake fertilization. Error bars indicate one standard error and are given only for unweighted data. Note 2014 is included for comparison but due to high water an RST was used in place of the fence, which may result in size-selective bias. Following 2014 a 3-day smoothing window was also applied to daily weighted and unweighted length calculations.
 
 
 
