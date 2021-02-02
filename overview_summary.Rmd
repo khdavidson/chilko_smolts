@@ -10,17 +10,21 @@ knitr::opts_chunk$set(echo = TRUE)
 # set up
 setwd("~/Documents/ANALYSIS/data")
 library(tidyverse)
+library(broom)      # for nested modelling
+library(ggpubr)     # for stat_cor in fig4
+library(egg)        # for ggarrange
+library(reshape2)   # for matrix for plot3D
+library(plot3D)     # for 3D histogram
 library(xlsx)
 library(openxlsx)
 
-# data sources/overview 
+# PART 1: data sources -- 'smolt.abund.raw' always throws an error. if you re-start the R session and re-run this block, it will work. 
 smolt.bio.yrs <- getSheetNames("Daily Length (1986-2015).xlsx")
 smolt.abund.raw <- read.xlsx("Chilko summary all years.xlsx", sheet="Annual outmigration")
 esc.raw <- read.xlsx("DFO Sockeye Escapement All Years (June 2020).xlsx", sheet="SKAll")
 fecund.raw <- read.xlsx("Sockeye Fecundity Database(2019VerifiedBB).xlsx", sheet="Data")
 psc.raw <- read.csv("PSC_master.csv")
 fry.raw <- read.xlsx("FryDB(Verified2019BB).xlsx", sheet="FryData")
-length.data <- read.csv("chilko_lengths_weightunweight_export.csv")
 ```
 
 ```{r, include=F}
@@ -67,7 +71,9 @@ alldat <- rbind(smolt_bio_yrs, smolt_abund_yrs, fry_bio_yrs, esc_yrs, fecund, fe
 
 <br>
 
-# Chilko data summary #
+## Chilko data summary ##
+
+--------
 
 DFO StAD data on Chilko juvenile and adult sockeye (Figure 1):
 
@@ -123,7 +129,7 @@ Other data sources might be accessed through Environmental Watch Program, Hinch 
 
 <br>
 
-## Other systems ##
+### Other systems ###
 
 Sparse fry data (Figure 2) and smolt data (below) exists for other systems if controls/comparisons are required:
 
@@ -154,33 +160,355 @@ Figure 2. StA fry data excluding Chilko.
 
 <br>
 
-# Data Exploration #
+<br>
 
-## Fork length over time ## 
+<br>
 
-There is some evidence of cyclic patterns in fork length overtime for both age-1 and age-2 smolts, but this pattern may be increasing in variability/breaking down in recent years (Figure 3).
-
-```{r, echo=F, warning=F}
-ggplot() +
-  annotate("rect", xmin=1990, xmax=1993, ymin=-Inf, ymax=Inf, fill="red", alpha=0.5) + 
-  geom_vline(xintercept=1988, linetype="solid", colour="red", size=1, alpha=0.5) +
-  geom_errorbar(data=length.data, aes(x=year, ymin=length_unweightavg_age2-length_unweightse_age2, ymax=length_unweightavg_age2+length_unweightse_age2), width=0, size=1, colour="gray60") +
-  geom_point(data=length.data, aes(x=year, y=length_unweightavg_age2), shape=21, colour="gray60", fill="gray80", size=4, stroke=1.5) +
-  geom_point(data=length.data, aes(x=year, y=length_weightavg_age2), shape=21, colour="black", fill="gray40", size=4, stroke=1.5, alpha=0.7) +
-  geom_errorbar(data=length.data, aes(x=year, ymin=length_unweightavg_age1-length_unweightse_age1, ymax=length_unweightavg_age1+length_unweightse_age1), width=0, size=1, colour="gray60") +
-  geom_point(data=length.data, aes(x=year, y=length_unweightavg_age1), shape=23, colour="gray60", fill="gray80", size=4, stroke=1.5) +
-  geom_point(data=length.data, aes(x=year, y=length_weightavg_age1), shape=23, colour="black", fill="gray40", size=4, stroke=1.5, alpha=0.7) +
-  scale_x_continuous(breaks=seq(1986,2020, by=3)) +
-  labs(x="", y="Fork length (mm)") +
-  theme_bw() +
-  theme(axis.text = element_text(colour="black", size=12),
-    axis.title = element_text(colour="black", size=15, face="bold"))
+```{r echo=F, include=F}
+###################################################################################################################################################
+###################################################################################################################################################
 ```
 
-Figure 3. Chilko smolt age-1 (diamonds) and age-2 (circles) unweighted (light gray) and weighted-by-abundace (dark gray) fork lenghts over time. Red shaded areas indicate years of lake fertilization. Error bars indicate one standard error and are given only for unweighted data. Note 2014 is included for comparison but due to high water an RST was used in place of the fence, which may result in size-selective bias. Following 2014 a 3-day smoothing window was also applied to daily weighted and unweighted length calculations.
+
+## Methods/overview ##
+
+--------
+
+```{r, echo=F, include=F}
+setwd("~/Documents/ANALYSIS/data")
+
+smolt.df <- read.csv("chilko_smolt_df.csv")
+fry.df <- read.csv("chilko_fry_df.csv")
+rec.df <- read.csv("chilko_rdev_df.csv")
+efs.df <- read.csv("chilko_efs_df.csv")
+lf.raw <- read.xlsx("chilko_smoltlength_timeseries.xlsx", sheet="lf_sub", detectDates=T)
+
+
+############
+# CLEANING #
+############
+
+#-------- Amend smolt df to only include age1 smolt data for simplicity
+smolts_a1 <- smolt.df %>% 
+  select(smolt_year, length_weightavg_age1, length_unweightavg_age1, length_unweightse_age1, age1_total, smolt_total) %>%
+  print()
+
+#-------- Lengh-frequency
+lf <- lf.raw %>% 
+  rename(date=Date,
+    length_mm=`Length.(mm)`,
+    age=Age,
+    freq=Freq,
+    sum_lf=`Sum.(L.X.F)`) %>%
+  mutate(year = lubridate::year(date)) %>%
+  mutate(yday = lubridate::yday(date)) %>%
+  mutate_at("age", as.factor) %>%
+  print()
+
+# expand frequency table to be observations only (no 0 freq measurements)
+lf_exp <- lf[rep(1:nrow(lf), lf[["freq"]]), ]
+
+
+###################
+# FOR 3D PLOTTING #
+###################
+# clean, pivot to wide matrix format 
+lf_exp_w14_1 <- lf %>%
+  filter(year==2014, age==1) %>%
+  arrange(yday, length_mm) %>%
+  select(yday, length_mm, freq) %>%
+  pivot_wider(names_from=length_mm, values_from=freq) %>%
+  column_to_rownames(var="yday") %>%
+  print()
+
+# replace 0s with NAs to make plot clearer
+lf_exp_w14_1[lf_exp_w14_1==0]=NA
+
+# convert to matrix format
+lf_exp_w14_1 <- data.matrix(lf_exp_w14_1, rownames.force = NA)
+
+# x and y value sequences for plot
+rnameseq <- as.numeric(row.names(lf_exp_w14_1))
+cnameseq <- as.numeric(colnames(lf_exp_w14_1))
+```
+
+The majority of smolts leave Chilko Lake as age-1 (>81% from 1986-2019). Unless noted, all analysis from here-on is limited to age-1 smolts.
+
+```{r, echo=F, warning=F, include=F}
+#Figure x. Proportion of age-1 smolts leaving Chilko over time.
+ggplot(data=smolt.df %>% group_by(smolt_year) %>% summarize(propn_age1 = age1_total/(age1_total+age2_total)), 
+        aes(x=smolt_year, y=propn_age1)) +
+  geom_line(size=1, colour="gray80") +
+  geom_point(shape=21, size=3.5, colour="black", fill="gray80", stroke=1.5) +
+  scale_x_continuous(breaks=seq(1986,2020, by=2)) +
+  scale_y_continuous(limits=c(0.80,1), breaks=seq(0.80,1.0,by=0.05)) +
+  labs(x="", y="% Age-1 smolts") +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=10),
+    axis.title = element_text(colour="black", size=12, face="bold"))
+```
+
+<br>
+
+Given substantial variability in nightly smolt migration and the non-random method of obtaining smolt length samples, it is recommended that smolt lengths be weighted by nighly abundance (S. Decker). With the exception of a small number of data points, Figure 3 shows minimal difference between weighted and unweighted average smolt fork lengths each year.  
+
+```{r, echo=F, warning=F}
+#########
+# FIG 3 #
+#########
+ggplot() +
+  #annotate("text", x=2020, y=173, label="A") +
+  annotate("rect", xmin=1990, xmax=1993, ymin=-Inf, ymax=Inf, fill="red", alpha=0.5) + 
+  geom_vline(xintercept=1988, linetype="solid", colour="red", size=1, alpha=0.5) +
+  geom_errorbar(data=smolts_a1, aes(x=smolt_year, ymin=length_unweightavg_age1-length_unweightse_age1, ymax=length_unweightavg_age1+length_unweightse_age1), width=0, size=1, colour="gray60") +
+  geom_line(data=smolts_a1, aes(x=smolt_year, y=length_unweightavg_age1), colour="gray80", size=0.8, alpha=0.7) +
+  geom_line(data=smolts_a1, aes(x=smolt_year, y=length_weightavg_age1), colour="black", size=0.8, alpha=0.7) +
+  geom_point(data=smolts_a1, aes(x=smolt_year, y=length_unweightavg_age1), shape=21, colour="gray60", fill="gray80", size=2.5, stroke=1.2) +
+  geom_point(data=smolts_a1, aes(x=smolt_year, y=length_weightavg_age1), shape=21, colour="black", fill="#00b8ff", size=2.5, stroke=1.2) +
+  scale_x_continuous(limits=c(1986,2020), breaks=seq(1986,2020,by=3)) +
+  scale_y_continuous(limits=c(70,100), breaks=seq(70,100,by=5))+
+  labs(x="", y="Age-1 smolt length (mm)") +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=10),
+    axis.title = element_text(colour="black", size=12, face="bold"))
+```
+
+*Figure 3. Age-1 Chilko smolt fork lenghts, unweighted (light gray), and weighted-by-abundace (blue). Red shaded areas indicate years of lake fertilization. Error bars indicate one standard error and are given only for unweighted data. Note 2015 is included for comparison but due to high water an RST was used in place of the fence, which may result in size-selective bias. Following 2014 a 3-day smoothing window was also applied to daily weighted and unweighted length calculations.*
+
+<br>
+
+In the most recent 5 years (fence not operated in 2015 and 2020) there is a significant effect of 'day' on average daily age-1 smolt length, and occasionally on age-2 daily average length as daily smolth lengths oscillate (Code 1 and Figure 4). However, there is no overall temporal trend in smolth length throughout the migration period (*R^2* < 0.12 for all ages and years; Figure 4). 
+
+```{r, echo=F, warning=F, include=F}
+### OLD FIG 4 - Daily smolt length (mm) in the most recent 5 years expressed as a) boxplot with medians and quartiles, and b) point size scaled by frequency of observations. Note different x- and y- axis limits for all plots.
+ggplot(lf_exp%>%filter(!is.na(age)), aes(x=as.Date(yday, origin=as.Date("1970-01-01")), y=length_mm, group=interaction(age, yday))) +
+  #geom_bar(stat="identity", colour="black") +
+  #geom_point() +
+  #geom_errorbar(aes(x=as.Date(yday, origin=as.Date("1970-01-01")), ymin=mean_length-sd, ymax=mean_length+sd)) +
+  geom_boxplot(aes(fill=age), alpha=0.8, width=1) +
+  scale_x_date(date_labels="%b %d") +
+  labs(x="", y="Length (mm)") +
+  facet_wrap(~year, scales="free") +
+  theme_bw() +
+  theme(legend.position = c(0.8,0.2))
+
+ggplot(lf_exp%>%filter(!is.na(age)), aes(x=as.Date(yday, origin=as.Date("1970-01-01")), y=length_mm, size=freq, group=interaction(age, yday))) +
+  geom_point(aes(fill=age), alpha=0.2, shape=21, stroke=0.5) +
+  scale_x_date(date_labels="%b %d") +
+  scale_size_continuous(range=c(2,8)) +
+  labs(x="", y="Length (mm)") +
+  facet_wrap(~year, scales="free") +
+  theme_bw() +
+  theme(legend.position = c(0.85,0.2),
+    legend.box="horizontal") +
+  guides(fill = guide_legend(override.aes = list(size = 3))) 
+### OLD FIG 5 - Example 3-D plot of smolt length (mm) frequency over time during the 2014 outmigration. 
+hist3D(x=rnameseq, y=cnameseq, z=lf_exp_w14_1, scale=F, expand=0.23, bty="g", phi=25,
+        col=jet.col(100, alpha=1), border="black", shade=0, theta=40,
+        space=0, ticktype="detailed", d=2, xlab = "Date", ylab = "Length (mm)", zlab = "Frequency", main="Chilko 2014")
+```
+
+```{r, warning=F, echo=F, message=F}
+#########
+# FIG 4 #
+#########
+ggplot(lf_exp%>%filter(!is.na(age)), aes(x=as.Date(yday, origin=as.Date("1970-01-01")), y=length_mm)) +
+  geom_violin(aes(fill=age, group=interaction(age, yday))) +
+  geom_smooth(aes(group=age, colour=age), method="lm") +
+  stat_summary(aes(colour=age), fun=mean, geom="point") +
+  labs(x="", y="Length (mm)") +
+  facet_wrap(~year, scales="free") +
+  theme_bw() +
+  theme(legend.position = c(0.8,0.2)) +
+  stat_cor(aes(group=age, colour=age, label=..rr.label..), size=3, label.y=c(67,67), label.x=c(108,120)) +
+  stat_cor(aes(group=age, colour=age, label=..p.label..), size=3, label.y=c(60,60), label.x=c(108,120)) 
+  
+```
+
+*Fig 4. Age-1 and -2 Chilko smolt length over time for most recent 5 years of data. Points indicate means. Violin widths indicate data density. Not different y-axis limits for each plot.*
+
+<br>
+
+*Code 1. Linear models examining the effect of 'day' on smolth length for each year and age.*
+
+```{r, echo=F, warning=F, message=F}
+lm1 <- lm(lf_exp[lf_exp$age=="1"&lf_exp$year=="2014",]$length_mm ~ lf_exp[lf_exp$age=="1" & lf_exp$year=="2014",]$date)
+r1 <- resid(lm1)
+hist(r1)    # slight skew, center weighted
+qqnorm(r1)  # bit of a tail 
+qqline(r1)
+plot(r1)
+plot(lm1)
+
+# grouped anova/lm (toggle 'lm' / 'aov' function)
+aovs <- lf_exp %>% 
+  filter(!is.na(age)) %>%
+  nest(-year, -age) %>% 
+  mutate(fit = map(data, ~ lm(length_mm ~ date, data = .)),
+         results = map(fit, glance)) %>% 
+  unnest(results) %>%
+  print()
+```
+
+<br>
+
+<br>
+
+<br>
+
+## Size, abundance, and recruitment temporal trends ##
+
+--------
+
+Age-1 smolt size varied from approximately 70-100 over the history of the Chilko smolt program (Figures 6a). Lake fertilization was responsible for early size increases, but in recent years smolt fork length appears to become more variable (Figure 6a). Figure 4 shows trends in age-1 smolt length and recruitment. 
+
+```{r, echo=F, warning=F, include=F}
+##########
+# FIG 6a #
+##########
+s1<-ggplot() +
+  annotate("rect", xmin=1990, xmax=1993, ymin=-Inf, ymax=Inf, fill="red", alpha=0.5) + 
+  geom_vline(xintercept=1988, linetype="solid", colour="red", size=1, alpha=0.5) +
+  geom_line(data=smolts_a1, aes(x=smolt_year, y=length_weightavg_age1), colour="black", size=0.8, alpha=0.7) +  
+  geom_point(data=smolts_a1, aes(x=smolt_year, y=length_weightavg_age1), shape=21, colour="black", fill="gray70", size=2.5, stroke=1.2) +
+  scale_x_continuous(limits=c(1986,2020), breaks=seq(1986,2020,by=2)) +
+  scale_y_continuous(limits=c(70,105)) +
+  labs(x="", y="Smolt fork length (mm)") +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=8),
+    axis.text.x = element_text(angle=45, hjust=1),
+    axis.title = element_text(colour="black", size=10, face="bold"))
+
+##########
+# FIG 6b #
+##########
+d<-ggplot() +
+  annotate("rect", xmin=1990, xmax=1993, ymin=-Inf, ymax=Inf, fill="red", alpha=0.5) + 
+  geom_vline(xintercept=1988, linetype="solid", colour="red", size=1, alpha=0.5) +
+  geom_line(data=rec.df, aes(x=brood_year, y=rec_dev), colour="black", size=0.8, alpha=0.7) +  
+  geom_point(data=rec.df, aes(x=brood_year, y=rec_dev), shape=21, colour="black", fill="gray70", size=2.5, stroke=1.2) +
+  scale_x_continuous(limits=c(1986,2020), breaks=seq(1986,2020,by=2)) +
+  scale_y_continuous(limits=c(-4,2)) +
+  labs(x="", y="Recruitment deviates") +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=8),
+    axis.text.x = element_text(angle=45, hjust=1),
+    axis.title = element_text(colour="black", size=10, face="bold"))
+
+##########
+# FIG 6c #
+##########
+a<-ggplot() +
+  annotate("rect", xmin=1990, xmax=1993, ymin=-Inf, ymax=Inf, fill="red", alpha=0.5) + 
+  geom_vline(xintercept=1988, linetype="solid", colour="red", size=1, alpha=0.5) +
+  geom_line(data=efs.df, aes(x=efs_year, y=efs/1000), colour="black", size=0.8, alpha=0.7) +  
+  geom_point(data=efs.df, aes(x=efs_year, y=efs/1000), shape=21, colour="black", fill="gray70", size=2.5, stroke=1.2) +
+  scale_x_continuous(limits=c(1986,2020), breaks=seq(1986,2020,by=2)) +
+  scale_y_continuous(limits=c(0,1300),  breaks=seq(0,1300,by=300)) +
+  labs(x="", y="EFS (1000s)") +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=8),
+    axis.text.x = element_text(angle=45, hjust=1),
+    axis.title = element_text(colour="black", size=10, face="bold")) 
+```
+
+```{r, warning=F, echo=F}
+ggarrange(s1, d, a, nrow=3)
+```
+
+*Figure 6. a) Age-1 smolt fork length (weighted), b) Larkin model recruitment deviates, and c) effective female spawners over time.*
+
+<br>
+
+<br>
+
+<br>
 
 
 
+## Life history and recruitment ##
 
+```{r, echo=F, include=F}
+# data joins for plotting
+fry.df <- fry.df %>% 
+  mutate(smolt_year = fry_year+1) %>% 
+  print()
+smolt.fry.df <- left_join(smolts_a1, fry.df, by="smolt_year")
+
+rec.df <- rec.df %>% 
+  mutate(smolt_year=brood_year-2) %>%
+  print()
+smolt.rec.df <- left_join(smolts_a1, rec.df, by="smolt_year")
+
+efs.df <- efs.df %>% 
+  mutate(smolt_year = efs_year+2) %>% 
+  print()
+smolt.efs.df <- left_join(smolts_a1, efs.df, by="smolt_year")
+smolt.efs.df <- smolt.efs.df %>%
+  mutate(smolts_p_efs = age1_total/efs) %>% 
+  print()
+```
+
+There is not a clear relationship between age-1 smolt size and the recruitment 2 years later. There is also not a clear relationship between the size of fry and age-1 smolts the following year (Figure 7).
+
+```{r, echo=F, warning=F, include=F}
+##########
+# FIG 7a #
+##########
+ll<-ggplot() +
+  annotate("text", x=29.4, y=103, label="A") +
+  geom_point(data=smolt.fry.df, aes(x=fry_length_mean, y=length_weightavg_age1), shape=21, colour="black", fill="gray70", size=2.5, stroke=1.2) +
+  #geom_text(data=smolt.fry.df, aes(x=fry_length_mean, y=length_weightavg_age1, label=smolt_year), nudge_x=0.1, nudge_y=0.8) +
+  labs(x="Fry fork length (mm)", y="Age-1 smolt length (mm)") +
+  scale_y_continuous(limits=c(70,105), breaks=seq(70,105,by=5))+
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=8),
+    axis.title = element_text(colour="black", size=10, face="bold"))
+
+##########
+# FIG 7b #
+##########
+lr<-ggplot() +
+  annotate("text", x=99, y=1.75, label="B") +
+  geom_point(data=smolt.rec.df, aes(x=length_unweightavg_age1, y=rec_dev), shape=21, colour="black", fill="gray70", size=2.5, stroke=1.2) +
+  #geom_text(data=chilko.df, aes(x=length_unweightavg_age1, y=Dev, label=smolt_year), nudge_x=0.5, nudge_y=0.1) +
+  labs(x="Age-1 smolt length (mm)", y="Recruitment deviates") +
+  scale_y_continuous(limits=c(-4,2), breaks=seq(-4,2,by=1)) +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=8),
+    axis.title = element_text(colour="black", size=10, face="bold"))
+
+##########
+# FIG 7c #
+##########
+le<-ggplot() +
+  annotate("text", x=1100, y=103, label="C") +
+  geom_point(data=smolt.efs.df, aes(x=efs/1000, y=length_weightavg_age1), shape=21, colour="black", fill="gray70", size=2.5, stroke=1.2) +
+  #geom_text(data=smolt.efs.df, aes(x=efs/1000, y=length_weightavg_age1, label=smolt_year), nudge_x=0.5, nudge_y=0.1) +
+  labs(x="EFS (1000s)", y="Age-1 smolt length (mm)") +
+  scale_y_continuous(limits=c(70,105), breaks=seq(70,105,by=5)) +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=8),
+    axis.title = element_text(colour="black", size=10, face="bold"))
+
+##########
+# FIG 7d #
+##########
+are<-ggplot() +
+  annotate("text", x=1199, y=323, label="D") +
+  geom_point(data=smolt.efs.df, aes(x=efs/1000, y=smolts_p_efs), shape=21, colour="black", fill="gray70", size=2.5, stroke=1.2) +
+  #geom_text(data=chilko.df, aes(x=efs/1000, y=smolts_p_efs, label=smolt_year), nudge_x=0.5, nudge_y=0.1) +
+  labs(x="EFS (1000s)", y="Age-1 smolts/EFS") +
+  scale_y_continuous(limits=c(0,325), breaks=seq(0,325,by=50)) +
+  theme_bw() +
+  theme(axis.text = element_text(colour="black", size=8),
+    axis.title = element_text(colour="black", size=10, face="bold"))
+```
+
+```{r, echo=F, warning=F, message=F}
+ggarrange(ll, lr, le, are, nrow=2, ncol=2)
+```
+
+*Figure 7. Relationship between a) fry length and age-1 smolt length (weighted) the following year, b) age-1 smolt length (weighted) and recruitment (deviates) two years later, c) brood-year effective female spawners and resulting age-1 smolt length (weighted) two years later, and d) brood-year effective female spawners and resulting age-1 smolts per effective female spawner two years later.*
 
 
