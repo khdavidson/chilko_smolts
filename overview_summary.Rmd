@@ -7,6 +7,11 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+# set up git access via PAT
+# library(gitcreds)   
+# gitcreds_set()
+# gitcreds_get() to confirm
+
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
@@ -16,11 +21,8 @@ library(egg)        # for ggarrange
 library(reshape2)   # for matrix for plot3D
 library(plot3D)     # for 3D histogram
 library(readxl)
-library(gitcreds)
 
 # set up
-gitcreds_set()
-gitcreds_get()
 setwd("~/ANALYSIS/data")
 
 #--------- DATA: Part 1 summaries/trends 
